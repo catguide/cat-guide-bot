@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roblox joinen</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: Arial, sans-serif;
+    color: white;
+  }
+  .card {
+    background: #16213e;
+    border-radius: 16px;
+    padding: 40px 50px;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  p { color: #aaa; margin-bottom: 30px; font-size: 14px; }
+  a {
+    display: inline-block;
+    background: #00b06f;
+    color: white;
+    padding: 16px 40px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: 20px;
+    font-weight: bold;
+    transition: background 0.2s;
+  }
+  a:hover { background: #009060; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🚀 Roblox Server joinen</h1>
+  <p id="info">Lade...</p>
+  <a id="joinBtn" href="#">Jetzt joinen</a>
+</div>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const placeId = params.get('placeId');
+  const gameInstanceId = params.get('gameInstanceId');
+  if (placeId && gameInstanceId) {
+    const url = `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${gameInstanceId}`;
+    document.getElementById('joinBtn').href = url;
+    document.getElementById('info').textContent = 'Klicke den Button um Roblox zu öffnen';
+  } else {
+    document.getElementById('info').textContent = 'Ungültiger Link';
+    document.getElementById('joinBtn').style.display = 'none';
+  }
+</script>
+</body>
+</html>
