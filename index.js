@@ -104,7 +104,7 @@ async function findPlayerInGame(placeId, targetUserId) {
           serverId: server.id,
           players: server.playing,
           maxPlayers: server.maxPlayers,
-          joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${server.id}`
+          joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${server.id}&userId=${targetUserId}`
         };
       }
     }
@@ -295,7 +295,7 @@ client.on('interactionCreate', async (interaction) => {
 
     // Wenn placeId bekannt (Freunde oder öffentlich) → direkt joinen
     if (p.placeId && p.gameId) {
-      const joinLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`;
+      const joinLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}&userId=${userInfo.id}`;
       const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
       const gameName = gameRes?.data?.[0]?.name || `Place ${p.placeId}`;
       const embed = new EmbedBuilder()
