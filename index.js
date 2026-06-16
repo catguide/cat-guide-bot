@@ -73,45 +73,53 @@ async function getRobloxUserId(username) {
 
 async function resolveTokensToIds(tokens) {
   if (!tokens.length) return [];
-  const batch = tokens.map(t => ({ token: t, type: 'AvatarHeadShot', size: '48x48', format: 'Png' }));
-  const res = await axios.post('https://thumbnails.roblox.com/v1/batch', batch, {
-    headers: { 'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/json' },
-    timeout: 10000
-  }).catch(() => null);
-  return res?.data?.data?.map(d => d.targetId).filter(Boolean) || [];
+  const CHUNK = 100;
+  const ids = [];
+  for (let i = 0; i < tokens.length; i += CHUNK) {
+    const chunk = tokens.slice(i, i + CHUNK);
+    const batch = chunk.map(t => ({ token: t, type: 'AvatarHeadShot', size: '48x48', format: 'Png' }));
+    const res = await axios.post('https://thumbnails.roblox.com/v1/batch', batch, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/json' },
+      timeout: 8000
+    }).catch(() => null);
+    const result = res?.data?.data?.map(d => d.targetId).filter(Boolean) || [];
+    ids.push(...result);
+  }
+  return ids;
 }
 
 async function findPlayerInGame(placeId, targetUserId) {
+  const TIMEOUT_MS = 28000;
+  const start = Date.now();
   let cursor = '';
   const maxPages = 20;
 
   for (let page = 0; page < maxPages; page++) {
+    if (Date.now() - start > TIMEOUT_MS) break;
+
     const url = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100${cursor ? `&cursor=${cursor}` : ''}`;
-    const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 12000, validateStatus: () => true }).catch(() => null);
+    const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000, validateStatus: () => true }).catch(() => null);
     if (!res?.data?.data?.length) break;
 
     const servers = res.data.data;
 
-    // Alle Tokens dieser Seite in EINEM einzigen Batch-Call auflösen
-    const allTokens = servers.flatMap(s => s.playerTokens || []);
-    if (allTokens.length > 0) {
-      const allIds = await resolveTokensToIds(allTokens);
-      if (allIds.includes(targetUserId)) {
-        // Welcher Server hat den Spieler?
-        let offset = 0;
-        for (const server of servers) {
-          const count = server.playerTokens?.length || 0;
-          const serverIds = allIds.slice(offset, offset + count);
-          if (serverIds.includes(targetUserId)) {
-            return {
-              serverId: server.id,
-              players: server.playing,
-              maxPlayers: server.maxPlayers,
-              joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${server.id}&userId=${targetUserId}`
-            };
-          }
-          offset += count;
-        }
+    // Server in 10er-Gruppen parallel checken
+    for (let i = 0; i < servers.length; i += 10) {
+      if (Date.now() - start > TIMEOUT_MS) break;
+      const group = servers.slice(i, i + 10);
+      const hits = await Promise.all(group.map(async server => {
+        if (!server.playerTokens?.length) return null;
+        const ids = await resolveTokensToIds(server.playerTokens);
+        return ids.includes(targetUserId) ? server : null;
+      }));
+      const found = hits.find(h => h !== null);
+      if (found) {
+        return {
+          serverId: found.id,
+          players: found.playing,
+          maxPlayers: found.maxPlayers,
+          joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${found.id}&userId=${targetUserId}`
+        };
       }
     }
 
