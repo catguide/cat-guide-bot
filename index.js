@@ -80,10 +80,16 @@ async function getRobloxUser(username) {
   const user = res.data.data[0];
 
   // Details holen
+  const headers = {
+    'User-Agent': 'Mozilla/5.0',
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
+  };
+
   const [details, presence, avatar] = await Promise.all([
-    axios.get(`https://users.roblox.com/v1/users/${user.id}`).catch(() => null),
-    axios.post('https://presence.roblox.com/v1/presence/users', { userIds: [user.id] }).catch(() => null),
-    axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png`).catch(() => null),
+    axios.get(`https://users.roblox.com/v1/users/${user.id}`, { headers }).catch(() => null),
+    axios.post('https://presence.roblox.com/v1/presence/users', { userIds: [user.id] }, { headers }).catch(() => null),
+    axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png`, { headers }).catch(() => null),
   ]);
 
   const p = presence?.data?.userPresences?.[0];
@@ -96,13 +102,17 @@ async function getRobloxUser(username) {
     if (p.userPresenceType === 0) statusText = '⚫ Offline';
     else if (p.userPresenceType === 1) statusText = '🟢 Online (Website)';
     else if (p.userPresenceType === 2) {
-      statusText = `🎮 Im Spiel: **${p.lastLocation || 'Unbekannt'}**`;
-      if (p.placeId && p.gameId) {
+      const gameName = p.lastLocation || 'Unbekannt';
+      statusText = `🎮 Im Spiel: **${gameName}**`;
+      if (p.placeId) {
         gameInfo = {
           placeId: p.placeId,
-          gameId: p.gameId,
-          joinLink: `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`,
-          webLink: `https://www.roblox.com/games/${p.placeId}`
+          gameId: p.gameId || null,
+          joinLink: p.gameId
+            ? `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`
+            : `roblox://experiences/start?placeId=${p.placeId}`,
+          webLink: `https://www.roblox.com/games/${p.placeId}`,
+          gameName
         };
       }
     }
