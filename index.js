@@ -64,14 +64,59 @@ async function checkDoxbin(username) {
   }
 }
 
-async function getRobloxUser(username) {
-  const search = await axios.get(`https://users.roblox.com/v1/usernames/users`, {
-    method: 'POST',
-    data: { usernames: [username], excludeBannedUsers: false },
-    timeout: 8000
-  }).catch(() => null);
+async function getRobloxUserId(username) {
+  const res = await axios.post('https://users.roblox.com/v1/usernames/users', {
+    usernames: [username], excludeBannedUsers: false
+  }, { timeout: 8000 }).catch(() => null);
+  return res?.data?.data?.[0] || null;
+}
 
-  // POST via axios
+async function resolveTokensToIds(tokens) {
+  if (!tokens.length) return [];
+  const batch = tokens.map(t => ({ token: t, type: 'AvatarHeadShot', size: '48x48', format: 'Png' }));
+  const res = await axios.post('https://thumbnails.roblox.com/v1/batch', batch, {
+    headers: { 'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/json' },
+    timeout: 10000
+  }).catch(() => null);
+  return res?.data?.data?.map(d => d.targetId).filter(Boolean) || [];
+}
+
+async function findPlayerInGame(placeId, targetUserId) {
+  let cursor = '';
+  let attempts = 0;
+  const maxAttempts = 20;
+
+  while (attempts < maxAttempts) {
+    const url = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100${cursor ? `&cursor=${cursor}` : ''}`;
+    const res = await axios.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 10000,
+      validateStatus: () => true
+    }).catch(() => null);
+
+    if (!res?.data?.data?.length) break;
+
+    for (const server of res.data.data) {
+      if (!server.playerTokens?.length) continue;
+      const ids = await resolveTokensToIds(server.playerTokens);
+      if (ids.includes(targetUserId)) {
+        return {
+          serverId: server.id,
+          players: server.playing,
+          maxPlayers: server.maxPlayers,
+          joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${server.id}`
+        };
+      }
+    }
+
+    cursor = res.data.nextPageCursor;
+    if (!cursor) break;
+    attempts++;
+  }
+  return null;
+}
+
+async function getRobloxUser(username) {
   const res = await axios.post('https://users.roblox.com/v1/usernames/users', {
     usernames: [username], excludeBannedUsers: false
   }, { timeout: 8000 }).catch(() => null);
@@ -154,6 +199,18 @@ client.once('ready', async () => {
           .setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
+      .setName('find')
+      .setDescription('Roblox Spieler in einem Spiel finden — gibt den Server-Join-Link zurück')
+      .addStringOption(opt =>
+        opt.setName('username')
+          .setDescription('Roblox Username des Spielers')
+          .setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('placeid')
+          .setDescription('Place ID des Spiels (aus der URL: roblox.com/games/PLACEID)')
+          .setRequired(true))
+      .toJSON(),
+    new SlashCommandBuilder()
       .setName('scan')
       .setDescription('Ultra-Scan: Discord User oder Namen über 50+ Plattformen suchen')
       .addUserOption(opt =>
@@ -213,6 +270,53 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     return interaction.editReply({ embeds: [embed] });
+  }
+
+  // ── Find Command ──
+  if (interaction.commandName === 'find') {
+    await interaction.deferReply();
+    const username = interaction.options.getString('username');
+    const placeId = interaction.options.getString('placeid');
+
+    const userInfo = await getRobloxUserId(username);
+    if (!userInfo) {
+      return interaction.editReply({ content: `❌ Roblox User **${username}** nicht gefunden.` });
+    }
+
+    const loadEmbed = new EmbedBuilder()
+      .setTitle(`🔍 Suche \`${username}\` in Spiel \`${placeId}\`...`)
+      .setColor(0xfaa61a)
+      .setDescription('Scanne alle öffentlichen Server — das kann 1–2 Minuten dauern...')
+      .setFooter({ text: 'Cat Guide Investigation Bot' });
+    await interaction.editReply({ embeds: [loadEmbed] });
+
+    const result = await findPlayerInGame(parseInt(placeId), userInfo.id);
+
+    if (!result) {
+      const notFoundEmbed = new EmbedBuilder()
+        .setTitle(`❌ ${username} nicht gefunden`)
+        .setColor(0xed4245)
+        .setDescription(`Der Spieler ist entweder nicht in diesem Spiel, in einem privaten Server, oder der Server-Scan ist abgeschlossen.`)
+        .addFields(
+          { name: '👤 Gesuchter User', value: `[${username}](https://www.roblox.com/users/${userInfo.id}/profile)`, inline: true },
+          { name: '🎮 Spiel', value: `[Place ${placeId}](https://www.roblox.com/games/${placeId})`, inline: true },
+        )
+        .setFooter({ text: 'Cat Guide Investigation Bot' })
+        .setTimestamp();
+      return interaction.editReply({ embeds: [notFoundEmbed] });
+    }
+
+    const foundEmbed = new EmbedBuilder()
+      .setTitle(`✅ ${username} gefunden!`)
+      .setColor(0x57f287)
+      .addFields(
+        { name: '👤 Spieler', value: `[${username}](https://www.roblox.com/users/${userInfo.id}/profile)`, inline: true },
+        { name: '👥 Server', value: `${result.players}/${result.maxPlayers} Spieler`, inline: true },
+        { name: '🚀 Direkt joinen', value: `[Join Link](${result.joinLink})`, inline: false },
+      )
+      .setFooter({ text: 'Cat Guide Investigation Bot' })
+      .setTimestamp();
+    return interaction.editReply({ embeds: [foundEmbed] });
   }
 
   if (interaction.commandName !== 'scan') return;
