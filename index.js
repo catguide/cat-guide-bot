@@ -311,17 +311,10 @@ client.on('interactionCreate', async (interaction) => {
     if (p.placeId && p.gameId) {
       const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
       const gameName = gameRes?.data?.[0]?.name || `Place ${p.placeId}`;
-      const joinBtn = `https://catguide.github.io/cat-guide-bot/join.html?placeId=${p.placeId}&gameInstanceId=${p.gameId}`;
-      const embed = new EmbedBuilder()
-        .setTitle(`✅ ${username} gefunden!`)
-        .setColor(0x57f287)
-        .addFields({ name: '🎮 Spiel', value: gameName, inline: true })
-        .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(joinBtn).setStyle(ButtonStyle.Link),
-        new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
-      );
-      return interaction.editReply({ embeds: [embed], components: [row] });
+      const joinLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`;
+      return interaction.editReply({
+        content: `✅ **${username} gefunden in ${gameName}!**\n\n🚀 Link in Browser-Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
+      });
     }
 
     // placeId unbekannt (Privatsphäre) → alle Spiele scannen
@@ -345,20 +338,10 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
     }
 
-    const joinBtn2 = `https://catguide.github.io/cat-guide-bot/join.html?placeId=${p.placeId}&gameInstanceId=${result.serverId}`;
-    const foundEmbed = new EmbedBuilder()
-      .setTitle(`✅ ${username} gefunden!`)
-      .setColor(0x57f287)
-      .addFields(
-        { name: '🎮 Spiel', value: gameName2, inline: true },
-        { name: '👥 Server', value: `${result.players}/${result.maxPlayers} Spieler`, inline: true },
-      )
-      .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(joinBtn2).setStyle(ButtonStyle.Link),
-      new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
-    );
-    return interaction.editReply({ embeds: [foundEmbed], components: [row2] });
+    const joinLink2 = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${result.serverId}`;
+    return interaction.editReply({
+      content: `✅ **${username} gefunden in ${gameName2}!** (${result.players}/${result.maxPlayers} Spieler)\n\n🚀 Link in Browser-Adresszeile eingeben:\n\`\`\`\n${joinLink2}\n\`\`\``,
+    });
   }
 
   if (interaction.commandName !== 'scan') return;
