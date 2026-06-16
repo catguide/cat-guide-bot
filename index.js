@@ -2,6 +2,16 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const axios = require('axios');
 const PLATFORMS = require('./platforms');
+const express = require('express');
+
+// Mini-Webserver für roblox:// Redirect (Discord erlaubt kein roblox:// in Buttons)
+const app = express();
+app.get('/join', (req, res) => {
+  const { placeId, gameInstanceId } = req.query;
+  if (!placeId || !gameInstanceId) return res.status(400).send('Missing params');
+  res.redirect(`roblox://experiences/start?placeId=${placeId}&gameInstanceId=${gameInstanceId}`);
+});
+app.listen(3000);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
@@ -119,7 +129,7 @@ async function _scanServers(placeId, targetUserId) {
         serverId: found.id,
         players: found.playing,
         maxPlayers: found.maxPlayers,
-        joinLink: `https://www.roblox.com/games/start?placeId=${placeId}&gameInstanceId=${found.id}&userId=${targetUserId}`
+        joinLink: `http://104.238.167.216:3000/join?placeId=${placeId}&gameInstanceId=${found.id}`
       };
     }
 
@@ -309,18 +319,15 @@ client.on('interactionCreate', async (interaction) => {
 
     // Wenn placeId bekannt (Freunde oder öffentlich) → direkt joinen
     if (p.placeId && p.gameId) {
-      const deepLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}&userId=${userInfo.id}`;
       const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
       const gameName = gameRes?.data?.[0]?.name || `Place ${p.placeId}`;
       const embed = new EmbedBuilder()
         .setTitle(`✅ ${username} gefunden!`)
         .setColor(0x57f287)
-        .addFields(
-          { name: '🎮 Spiel', value: gameName, inline: true },
-          { name: '🚀 Direkt joinen (klicken)', value: deepLink },
-        )
+        .addFields({ name: '🎮 Spiel', value: gameName, inline: true })
         .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
       const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(`http://104.238.167.216:3000/join?placeId=${p.placeId}&gameInstanceId=${p.gameId}`).setStyle(ButtonStyle.Link),
         new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
       );
       return interaction.editReply({ embeds: [embed], components: [row] });
@@ -347,17 +354,16 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
     }
 
-    const robloxDeepLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${result.serverId}&userId=${userInfo.id}`;
     const foundEmbed = new EmbedBuilder()
       .setTitle(`✅ ${username} gefunden!`)
       .setColor(0x57f287)
       .addFields(
         { name: '🎮 Spiel', value: gameName2, inline: true },
         { name: '👥 Server', value: `${result.players}/${result.maxPlayers} Spieler`, inline: true },
-        { name: '🚀 Direkt joinen (klicken)', value: robloxDeepLink },
       )
       .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
     const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(result.joinLink).setStyle(ButtonStyle.Link),
       new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
     );
     return interaction.editReply({ embeds: [foundEmbed], components: [row2] });
