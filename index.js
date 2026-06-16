@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const axios = require('axios');
 const PLATFORMS = require('./platforms');
 
@@ -258,14 +258,16 @@ client.on('interactionCreate', async (interaction) => {
     if (user.avatarUrl) embed.setThumbnail(user.avatarUrl);
     if (user.description) embed.setDescription(`> ${user.description.slice(0, 200)}`);
 
+    const components = [];
     if (user.gameInfo) {
-      embed.addFields(
-        { name: '🌐 Spiel öffnen', value: `[Roblox Web](${user.gameInfo.webLink})`, inline: true },
-        { name: '🚀 Direkt joinen', value: `[Join Link](${user.gameInfo.joinLink})`, inline: true },
-      );
+      embed.addFields({ name: '🎮 Spiel', value: user.gameInfo.gameName, inline: true });
+      components.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(user.gameInfo.joinLink).setStyle(ButtonStyle.Link),
+        new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(user.gameInfo.webLink).setStyle(ButtonStyle.Link),
+      ));
     }
 
-    return interaction.editReply({ embeds: [embed] });
+    return interaction.editReply({ embeds: [embed], components });
   }
 
   // ── Find Command ──
@@ -299,12 +301,13 @@ client.on('interactionCreate', async (interaction) => {
       const embed = new EmbedBuilder()
         .setTitle(`✅ ${username} gefunden!`)
         .setColor(0x57f287)
-        .addFields(
-          { name: '🎮 Spiel', value: gameName, inline: true },
-          { name: '🚀 Direkt joinen', value: `[Join Link](${joinLink})`, inline: false },
-        )
+        .addFields({ name: '🎮 Spiel', value: gameName, inline: true })
         .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
-      return interaction.editReply({ embeds: [embed] });
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(joinLink).setStyle(ButtonStyle.Link),
+        new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
+      );
+      return interaction.editReply({ embeds: [embed], components: [row] });
     }
 
     // placeId unbekannt (Privatsphäre) → alle Spiele scannen
@@ -334,10 +337,13 @@ client.on('interactionCreate', async (interaction) => {
       .addFields(
         { name: '🎮 Spiel', value: gameName2, inline: true },
         { name: '👥 Server', value: `${result.players}/${result.maxPlayers} Spieler`, inline: true },
-        { name: '🚀 Direkt joinen', value: `[Join Link](${result.joinLink})`, inline: false },
       )
       .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
-    return interaction.editReply({ embeds: [foundEmbed] });
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(result.joinLink).setStyle(ButtonStyle.Link),
+      new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
+    );
+    return interaction.editReply({ embeds: [foundEmbed], components: [row2] });
   }
 
   if (interaction.commandName !== 'scan') return;
