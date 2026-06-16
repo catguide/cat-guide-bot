@@ -10,9 +10,12 @@ app.get('/join', (req, res) => {
   const { placeId, gameInstanceId } = req.query;
   if (!placeId || !gameInstanceId) return res.status(400).send('Missing params');
   const robloxUrl = `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${gameInstanceId}`;
-  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Joining...</title></head><body>
-<p>Opening Roblox...</p>
-<script>window.location.href = ${JSON.stringify(robloxUrl)};</script>
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Join Roblox</title>
+<style>body{background:#1a1a2e;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:Arial}
+a{background:#00b06f;color:white;padding:20px 40px;border-radius:12px;text-decoration:none;font-size:24px;font-weight:bold}
+a:hover{background:#009060}</style></head>
+<body><a href=${JSON.stringify(robloxUrl)}>🚀 Jetzt in Roblox joinen</a>
+<script>setTimeout(()=>{window.location.href=${JSON.stringify(robloxUrl)}},500)</script>
 </body></html>`);
 });
 app.listen(3000);
