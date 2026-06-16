@@ -15,8 +15,15 @@ async function checkPlatform(platform, username) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
       },
-      validateStatus: () => true
+      validateStatus: () => true,
+      maxRedirects: 5
     });
+
+    // Finale URL nach Redirects prüfen — wenn sie 404/error enthält = nicht gefunden
+    const finalUrl = res.request?.res?.responseUrl || res.config?.url || url;
+    if (finalUrl.includes('404') || finalUrl.includes('error') || finalUrl.includes('not-found') || finalUrl.includes('notfound')) {
+      return { found: false, url, name: platform.name };
+    }
 
     if (platform.errorType === 'status_code') {
       return { found: res.status === 200, url, name: platform.name };
@@ -25,7 +32,7 @@ async function checkPlatform(platform, username) {
     if (platform.errorType === 'message') {
       const errorMsg = platform.errorMsg.replace(/\{\}/g, username);
       const bodyText = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
-      const notFound = bodyText.includes(errorMsg);
+      const notFound = bodyText.toLowerCase().includes(errorMsg.toLowerCase());
       return { found: res.status === 200 && !notFound, url, name: platform.name };
     }
 

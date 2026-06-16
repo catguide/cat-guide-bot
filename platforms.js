@@ -40,7 +40,7 @@ module.exports = [
   { name: 'Quora', url: 'https://www.quora.com/profile/{}', errorType: 'status_code' },
   { name: 'Bluesky', url: 'https://bsky.app/profile/{}', errorType: 'status_code' },
   { name: 'Chess.com', url: 'https://www.chess.com/member/{}', errorType: 'message', errorMsg: 'Oops! That page can\'t be found.' },
-  { name: 'Duolingo', url: 'https://www.duolingo.com/profile/{}', errorType: 'status_code' },
+  { name: 'Duolingo', url: 'https://www.duolingo.com/profile/{}', errorType: 'message', errorMsg: 'errors/404' },
   { name: 'Wattpad', url: 'https://www.wattpad.com/user/{}', errorType: 'status_code' },
   { name: 'Snapchat', url: 'https://www.snapchat.com/add/{}', errorType: 'message', errorMsg: 'Sorry! Couldn\'t find' },
   { name: 'Cashapp', url: 'https://cash.app/${}', errorType: 'status_code' },
