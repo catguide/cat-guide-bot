@@ -64,10 +64,76 @@ async function checkDoxbin(username) {
   }
 }
 
+async function getRobloxUser(username) {
+  const search = await axios.get(`https://users.roblox.com/v1/usernames/users`, {
+    method: 'POST',
+    data: { usernames: [username], excludeBannedUsers: false },
+    timeout: 8000
+  }).catch(() => null);
+
+  // POST via axios
+  const res = await axios.post('https://users.roblox.com/v1/usernames/users', {
+    usernames: [username], excludeBannedUsers: false
+  }, { timeout: 8000 }).catch(() => null);
+
+  if (!res?.data?.data?.[0]) return null;
+  const user = res.data.data[0];
+
+  // Details holen
+  const [details, presence, avatar] = await Promise.all([
+    axios.get(`https://users.roblox.com/v1/users/${user.id}`).catch(() => null),
+    axios.post('https://presence.roblox.com/v1/presence/users', { userIds: [user.id] }).catch(() => null),
+    axios.get(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png`).catch(() => null),
+  ]);
+
+  const p = presence?.data?.userPresences?.[0];
+  const avatarUrl = avatar?.data?.data?.[0]?.imageUrl;
+
+  let statusText = '⚫ Offline';
+  let gameInfo = null;
+
+  if (p) {
+    if (p.userPresenceType === 0) statusText = '⚫ Offline';
+    else if (p.userPresenceType === 1) statusText = '🟢 Online (Website)';
+    else if (p.userPresenceType === 2) {
+      statusText = `🎮 Im Spiel: **${p.lastLocation || 'Unbekannt'}**`;
+      if (p.placeId && p.gameId) {
+        gameInfo = {
+          placeId: p.placeId,
+          gameId: p.gameId,
+          joinLink: `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`,
+          webLink: `https://www.roblox.com/games/${p.placeId}`
+        };
+      }
+    }
+    else if (p.userPresenceType === 3) statusText = '🎮 Im Roblox Studio';
+  }
+
+  return {
+    id: user.id,
+    name: user.name,
+    displayName: user.displayName,
+    description: details?.data?.description || '',
+    created: details?.data?.created,
+    isBanned: details?.data?.isBanned,
+    avatarUrl,
+    statusText,
+    gameInfo,
+  };
+}
+
 client.once('ready', async () => {
   console.log(`✅ Cat Guide Bot online as ${client.user.tag}`);
 
   const commands = [
+    new SlashCommandBuilder()
+      .setName('roblox')
+      .setDescription('Roblox User suchen — Status, aktuelles Spiel & Join-Link')
+      .addStringOption(opt =>
+        opt.setName('username')
+          .setDescription('Roblox Username')
+          .setRequired(true))
+      .toJSON(),
     new SlashCommandBuilder()
       .setName('scan')
       .setDescription('Ultra-Scan: Discord User oder Namen über 50+ Plattformen suchen')
@@ -89,6 +155,47 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
+
+  // ── Roblox Command ──
+  if (interaction.commandName === 'roblox') {
+    await interaction.deferReply();
+    const username = interaction.options.getString('username');
+    const user = await getRobloxUser(username);
+
+    if (!user) {
+      return interaction.editReply({ content: `❌ Roblox User **${username}** nicht gefunden.` });
+    }
+
+    const createdDate = user.created
+      ? `<t:${Math.floor(new Date(user.created).getTime() / 1000)}:D>`
+      : 'Unbekannt';
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🎮 ${user.displayName} (@${user.name})`)
+      .setColor(user.gameInfo ? 0x57f287 : 0x2b2d31)
+      .setURL(`https://www.roblox.com/users/${user.id}/profile`)
+      .addFields(
+        { name: '🆔 User ID', value: `\`${user.id}\``, inline: true },
+        { name: '📅 Erstellt', value: createdDate, inline: true },
+        { name: '🚫 Gebannt', value: user.isBanned ? 'Ja' : 'Nein', inline: true },
+        { name: '📡 Status', value: user.statusText, inline: false },
+      )
+      .setFooter({ text: 'Cat Guide Investigation Bot' })
+      .setTimestamp();
+
+    if (user.avatarUrl) embed.setThumbnail(user.avatarUrl);
+    if (user.description) embed.setDescription(`> ${user.description.slice(0, 200)}`);
+
+    if (user.gameInfo) {
+      embed.addFields(
+        { name: '🌐 Spiel öffnen', value: `[Roblox Web](${user.gameInfo.webLink})`, inline: true },
+        { name: '🚀 Direkt joinen', value: `[Join Link](${user.gameInfo.joinLink})`, inline: true },
+      );
+    }
+
+    return interaction.editReply({ embeds: [embed] });
+  }
+
   if (interaction.commandName !== 'scan') return;
 
   await interaction.deferReply();
