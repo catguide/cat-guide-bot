@@ -214,11 +214,15 @@ client.once('ready', async () => {
       .toJSON(),
     new SlashCommandBuilder()
       .setName('find')
-      .setDescription('Roblox Spieler finden & direkt joinen — nur Username nötig')
+      .setDescription('Roblox Spieler finden & direkt joinen')
       .addStringOption(opt =>
         opt.setName('username')
           .setDescription('Roblox Username')
           .setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('placeid')
+          .setDescription('Place ID des Spiels (nur nötig wenn User Privacy an hat)')
+          .setRequired(false))
       .toJSON(),
     new SlashCommandBuilder()
       .setName('scan')
@@ -294,11 +298,26 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.editReply({ content: `❌ Roblox User **${username}** nicht gefunden.` });
     }
 
-    // Presence holen um placeId zu kriegen
+    const manualPlaceId = interaction.options.getString('placeid');
     const headers = {
       'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Content-Type': 'application/json',
       ...(process.env.ROBLOX_COOKIE ? { 'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` } : {})
     };
+
+    // Wenn placeid manuell angegeben → direkt scannen ohne Presence
+    if (manualPlaceId) {
+      const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${manualPlaceId}`, { headers }).catch(() => null);
+      const gameName = gameRes?.data?.[0]?.name || `Place ${manualPlaceId}`;
+      await interaction.editReply({ content: `🔍 Scanne **${gameName}** nach **${username}**...` });
+      const result = await findPlayerInGame(manualPlaceId, userInfo.id);
+      if (!result) return interaction.editReply({ content: `❌ **${username}** nicht in **${gameName}** gefunden (oder privater Server).` });
+      const joinLink = `roblox://experiences/start?placeId=${manualPlaceId}&gameInstanceId=${result.serverId}`;
+      return interaction.editReply({
+        content: `✅ **${username} gefunden in ${gameName}!** (${result.players}/${result.maxPlayers} Spieler)\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
+      });
+    }
+
+    // Presence holen um placeId zu kriegen
     const presence = await axios.post('https://presence.roblox.com/v1/presence/users',
       { userIds: [userInfo.id] }, { headers, timeout: 8000 }).catch(() => null);
     const p = presence?.data?.userPresences?.[0];
@@ -307,40 +326,32 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.editReply({ content: `❌ **${username}** ist gerade nicht in Roblox.` });
     }
 
-    // Wenn placeId bekannt (Freunde oder öffentlich) → direkt joinen
+    // placeId + gameId bekannt → direkt
     if (p.placeId && p.gameId) {
       const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
       const gameName = gameRes?.data?.[0]?.name || `Place ${p.placeId}`;
       const joinLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`;
       return interaction.editReply({
-        content: `✅ **${username} gefunden in ${gameName}!**\n\n🚀 Link in Browser-Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
+        content: `✅ **${username} gefunden in ${gameName}!**\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
       });
     }
 
-    // placeId unbekannt (Privatsphäre) → alle Spiele scannen
+    // placeId unbekannt (Privacy) → Hinweis mit placeid Option
     if (!p.placeId) {
-      return interaction.editReply({ content: `❌ **${username}** ist in Roblox, aber hat Privatsphäre aktiviert — Server kann nicht gefunden werden.` });
+      return interaction.editReply({ content: `❌ **${username}** hat Privacy aktiviert.\nWenn du weißt in welchem Spiel er ist: \`/find username:${username} placeid:PLACE_ID\`` });
     }
 
-    // placeId bekannt aber kein gameId → öffentliche Server scannen
-    const loadEmbed = new EmbedBuilder()
-      .setTitle(`🔍 Suche \`${username}\`...`)
-      .setColor(0xfaa61a)
-      .setDescription('Scanne alle öffentlichen Server — bitte warten...')
-      .setFooter({ text: 'Cat Guide Investigation Bot' });
-    await interaction.editReply({ embeds: [loadEmbed] });
-
+    // placeId bekannt aber kein gameId → Server scannen
+    await interaction.editReply({ content: `🔍 Scanne Server nach **${username}**...` });
     const result = await findPlayerInGame(p.placeId, userInfo.id);
     const gameRes2 = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
     const gameName2 = gameRes2?.data?.[0]?.name || `Place ${p.placeId}`;
 
-    if (!result) {
-      return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
-    }
+    if (!result) return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
 
     const joinLink2 = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${result.serverId}`;
     return interaction.editReply({
-      content: `✅ **${username} gefunden in ${gameName2}!** (${result.players}/${result.maxPlayers} Spieler)\n\n🚀 Link in Browser-Adresszeile eingeben:\n\`\`\`\n${joinLink2}\n\`\`\``,
+      content: `✅ **${username} gefunden in ${gameName2}!** (${result.players}/${result.maxPlayers} Spieler)\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink2}\n\`\`\``,
     });
   }
 
