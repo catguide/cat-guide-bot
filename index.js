@@ -9,7 +9,11 @@ const app = express();
 app.get('/join', (req, res) => {
   const { placeId, gameInstanceId } = req.query;
   if (!placeId || !gameInstanceId) return res.status(400).send('Missing params');
-  res.redirect(`roblox://experiences/start?placeId=${placeId}&gameInstanceId=${gameInstanceId}`);
+  const robloxUrl = `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${gameInstanceId}`;
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Joining...</title></head><body>
+<p>Opening Roblox...</p>
+<script>window.location.href = ${JSON.stringify(robloxUrl)};</script>
+</body></html>`);
 });
 app.listen(3000);
 
