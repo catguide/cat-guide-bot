@@ -102,7 +102,15 @@ async function getRobloxUser(username) {
     if (p.userPresenceType === 0) statusText = '⚫ Offline';
     else if (p.userPresenceType === 1) statusText = '🟢 Online (Website)';
     else if (p.userPresenceType === 2) {
-      const gameName = p.lastLocation || 'Unbekannt';
+      let gameName = p.lastLocation || null;
+      if (!gameName && p.placeId) {
+        const placeDetails = await axios.get(
+          `https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`,
+          { headers, timeout: 5000 }
+        ).catch(() => null);
+        gameName = placeDetails?.data?.[0]?.name || null;
+      }
+      gameName = gameName || 'Unbekannt';
       statusText = `🎮 Im Spiel: **${gameName}**`;
       if (p.placeId) {
         gameInfo = {
