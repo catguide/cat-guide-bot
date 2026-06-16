@@ -28,32 +28,28 @@ const PLATFORMS = [
   { name: 'Fiverr', url: 'https://www.fiverr.com/{}' },
   { name: 'Replit', url: 'https://replit.com/@{}' },
   { name: 'Gitlab', url: 'https://gitlab.com/{}' },
-  { name: 'Npmjs', url: 'https://www.npmjs.com/~{}' },
   { name: 'Keybase', url: 'https://keybase.io/{}' },
-  { name: 'Hackerrank', url: 'https://www.hackerrank.com/{}' },
-  { name: 'Leetcode', url: 'https://leetcode.com/{}' },
+  { name: 'Twitch', url: 'https://www.twitch.tv/{}' },
+  { name: 'Letterboxd', url: 'https://letterboxd.com/{}' },
+  { name: 'Last.fm', url: 'https://www.last.fm/user/{}' },
 ];
 
 async function checkPlatform(platform, username) {
-  const url = platform.url.replace('{}', username);
+  const url = platform.url.replace('{}', encodeURIComponent(username));
   try {
     const res = await axios.get(url, {
-      timeout: 5000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 6000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
       validateStatus: (s) => s < 500
     });
-    if (res.status === 200) return { found: true, url };
-    return { found: false, url };
+    return { found: res.status === 200, url, name: platform.name };
   } catch {
-    return { found: false, url };
+    return { found: false, url, name: platform.name };
   }
 }
 
 async function runScan(username) {
-  const results = await Promise.all(
-    PLATFORMS.map(p => checkPlatform(p, username).then(r => ({ name: p.name, ...r })))
-  );
-  return results;
+  return Promise.all(PLATFORMS.map(p => checkPlatform(p, username)));
 }
 
 client.once('ready', async () => {
@@ -62,17 +58,15 @@ client.once('ready', async () => {
   const commands = [
     new SlashCommandBuilder()
       .setName('scan')
-      .setDescription('Scans the internet for everything found about a name or Discord user')
-      .addStringOption(opt =>
-        opt.setName('target')
-          .setDescription('Username or name to scan')
-          .setRequired(false))
+      .setDescription('Scannt einen Discord User oder Namen — findet alles im Internet')
       .addUserOption(opt =>
         opt.setName('user')
-          .setDescription('Discord user to scan')
+          .setDescription('Discord User scannen (findet verlinkte Accounts + Internet-Suche)')
           .setRequired(false))
-      .setIntegrationTypes([0, 1])
-      .setContexts([0, 1, 2])
+      .addStringOption(opt =>
+        opt.setName('name')
+          .setDescription('Name oder Username direkt im Internet suchen')
+          .setRequired(false))
       .toJSON()
   ];
 
@@ -88,120 +82,98 @@ client.on('interactionCreate', async (interaction) => {
   await interaction.deferReply();
 
   const targetUser = interaction.options.getUser('user');
-  const targetName = interaction.options.getString('target');
+  const targetName = interaction.options.getString('name');
 
   if (!targetUser && !targetName) {
-    return interaction.editReply({ content: '❌ Please provide a username or mention a Discord user.' });
+    return interaction.editReply({ content: '❌ Bitte einen User oder Namen angeben.' });
   }
 
   // ── Discord User Scan ──
   if (targetUser) {
+    const fetchedUser = await client.users.fetch(targetUser.id, { force: true }).catch(() => targetUser);
     const member = await interaction.guild?.members.fetch({ user: targetUser.id, force: true }).catch(() => null);
 
-    const fetchedUser = await client.users.fetch(targetUser.id, { force: true }).catch(() => targetUser);
-    const flags = fetchedUser.flags?.toArray() || [];
-    const badgeMap = {
-      Staff: '👨‍💼 Discord Staff',
-      Partner: '🤝 Partner',
-      Hypesquad: '🏠 HypeSquad Events',
-      BugHunterLevel1: '🐛 Bug Hunter',
-      BugHunterLevel2: '🐛 Bug Hunter Gold',
-      HypeSquadOnlineHouse1: '🏠 Bravery',
-      HypeSquadOnlineHouse2: '🏠 Brilliance',
-      HypeSquadOnlineHouse3: '🏠 Balance',
-      PremiumEarlySupporter: '⭐ Early Supporter',
-      VerifiedDeveloper: '🤖 Verified Bot Developer',
-      ActiveDeveloper: '🔧 Active Developer',
-    };
-    const badges = flags.map(f => badgeMap[f] || f).join('\n') || 'None';
-
-    const createdAt = `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:F>`;
+    const createdAt = `<t:${Math.floor(fetchedUser.createdTimestamp / 1000)}:F>`;
     const joinedAt = member?.joinedTimestamp
       ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>`
-      : 'Unknown';
+      : 'Unbekannt';
 
-    const roles = member?.roles.cache
-      .filter(r => r.id !== interaction.guild?.id)
-      .map(r => r.toString())
-      .join(', ') || 'None';
-
-    // Fetch connected accounts via Discord API
-    let connections = 'Not accessible (user must share)';
-    const connectedNames = [];
+    // Verlinkte Accounts via Discord API holen
+    const connectedAccounts = [];
+    let connectionsText = 'Keine verlinkten Accounts sichtbar';
     try {
-      const res = await axios.get(`https://discord.com/api/v10/users/${targetUser.id}/profile`, {
+      const res = await axios.get(`https://discord.com/api/v10/users/${fetchedUser.id}/profile`, {
         headers: { Authorization: `Bot ${process.env.TOKEN}` }
       });
       if (res.data.connected_accounts?.length > 0) {
-        connections = res.data.connected_accounts
+        res.data.connected_accounts.forEach(c => {
+          connectedAccounts.push({ type: c.type, name: c.name });
+        });
+        connectionsText = connectedAccounts
           .map(c => `**${c.type}**: ${c.name}`)
           .join('\n');
-        res.data.connected_accounts.forEach(c => connectedNames.push(c.name));
-      } else {
-        connections = 'No linked accounts visible';
       }
     } catch {
-      connections = 'No linked accounts visible';
+      connectionsText = 'Keine verlinkten Accounts sichtbar';
     }
 
-    const discordEmbed = new EmbedBuilder()
-      .setTitle(`🔍 Investigation Report — ${targetUser.username}`)
+    const profileEmbed = new EmbedBuilder()
+      .setTitle(`🔍 Investigation — ${fetchedUser.username}`)
       .setColor(0x2b2d31)
-      .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
+      .setThumbnail(fetchedUser.displayAvatarURL({ size: 256 }))
       .addFields(
-        { name: '👤 Username', value: `${targetUser.username}`, inline: true },
-        { name: '🆔 User ID', value: targetUser.id, inline: true },
-        { name: '🤖 Bot', value: targetUser.bot ? 'Yes' : 'No', inline: true },
-        { name: '📅 Account Created', value: createdAt, inline: false },
-        { name: '📥 Joined Server', value: joinedAt, inline: false },
-        { name: '🏅 Badges', value: badges, inline: false },
-        { name: '🎭 Roles', value: roles.length > 1024 ? roles.slice(0, 1021) + '...' : roles, inline: false },
-        { name: '🔗 Linked Accounts', value: connections, inline: false },
+        { name: '👤 Username', value: fetchedUser.username, inline: true },
+        { name: '🆔 User ID', value: fetchedUser.id, inline: true },
+        { name: '🤖 Bot', value: fetchedUser.bot ? 'Ja' : 'Nein', inline: true },
+        { name: '📅 Account erstellt', value: createdAt },
+        { name: '📥 Server beigetreten', value: joinedAt },
+        { name: '🔗 Verlinkte Accounts', value: connectionsText },
       )
       .setFooter({ text: 'Cat Guide Investigation Bot' })
       .setTimestamp();
 
-    await interaction.editReply({ embeds: [discordEmbed] });
+    await interaction.editReply({ embeds: [profileEmbed] });
 
-    // If we found connected account names, auto-scan them
-    if (connectedNames.length > 0) {
-      for (const name of connectedNames) {
-        const scanResults = await runScan(name);
-        const found = scanResults.filter(r => r.found);
-        const notFound = scanResults.filter(r => !r.found);
+    // Internet-Scan für jeden verlinkten Account + Discord-Username
+    const namesToScan = [fetchedUser.username, ...connectedAccounts.map(c => c.name)];
+    const uniqueNames = [...new Set(namesToScan)];
 
-        const scanEmbed = new EmbedBuilder()
-          .setTitle(`🌐 Internet Scan — "${name}" (from linked accounts)`)
-          .setColor(0x5865f2)
-          .addFields(
-            {
-              name: `✅ Found on ${found.length} platforms`,
-              value: found.length > 0
-                ? found.map(r => `[${r.name}](${r.url})`).join('\n')
-                : 'None found',
-              inline: false
-            },
-            {
-              name: `❌ Not found on ${notFound.length} platforms`,
-              value: notFound.map(r => r.name).join(', ') || 'None',
-              inline: false
-            }
-          )
-          .setFooter({ text: 'Cat Guide Investigation Bot' })
-          .setTimestamp();
+    for (const name of uniqueNames) {
+      const results = await runScan(name);
+      const found = results.filter(r => r.found);
+      const notFound = results.filter(r => !r.found);
 
-        await interaction.followUp({ embeds: [scanEmbed] });
-      }
+      const scanEmbed = new EmbedBuilder()
+        .setTitle(`🌐 Internet-Scan — "${name}"`)
+        .setColor(found.length > 0 ? 0x57f287 : 0xed4245)
+        .addFields(
+          {
+            name: `✅ Gefunden auf ${found.length} Plattformen`,
+            value: found.length > 0
+              ? found.map(r => `[${r.name}](${r.url})`).join('\n')
+              : 'Nichts gefunden',
+            inline: false
+          },
+          {
+            name: `❌ Nicht gefunden (${notFound.length})`,
+            value: notFound.map(r => r.name).join(', ') || '—',
+            inline: false
+          }
+        )
+        .setFooter({ text: 'Cat Guide Investigation Bot' })
+        .setTimestamp();
+
+      await interaction.followUp({ embeds: [scanEmbed] });
     }
     return;
   }
 
-  // ── Internet Username Scan ──
+  // ── Direkte Internet-Suche ──
   if (targetName) {
     const loadingEmbed = new EmbedBuilder()
-      .setTitle(`🔍 Scanning "${targetName}" across the internet...`)
+      .setTitle(`🔍 Scanne "${targetName}"...`)
       .setColor(0xfaa61a)
-      .setDescription('Please wait, checking 25+ platforms...')
+      .setDescription('Bitte warten — durchsuche 25+ Plattformen...')
       .setFooter({ text: 'Cat Guide Investigation Bot' });
 
     await interaction.editReply({ embeds: [loadingEmbed] });
@@ -211,19 +183,19 @@ client.on('interactionCreate', async (interaction) => {
     const notFound = results.filter(r => !r.found);
 
     const resultEmbed = new EmbedBuilder()
-      .setTitle(`📋 Investigation Report — "${targetName}"`)
+      .setTitle(`📋 Ergebnis — "${targetName}"`)
       .setColor(found.length > 0 ? 0x57f287 : 0xed4245)
       .addFields(
         {
-          name: `✅ Found on ${found.length} platforms`,
+          name: `✅ Gefunden auf ${found.length} Plattformen`,
           value: found.length > 0
             ? found.map(r => `[${r.name}](${r.url})`).join('\n')
-            : 'No accounts found',
+            : 'Nichts gefunden',
           inline: false
         },
         {
-          name: `❌ Not found on ${notFound.length} platforms`,
-          value: notFound.map(r => r.name).join(', ') || 'None',
+          name: `❌ Nicht gefunden (${notFound.length})`,
+          value: notFound.map(r => r.name).join(', ') || '—',
           inline: false
         }
       )
