@@ -71,6 +71,8 @@ client.once('ready', async () => {
         opt.setName('user')
           .setDescription('Discord user to scan')
           .setRequired(false))
+      .setIntegrationTypes([0, 1])
+      .setContexts([0, 1, 2])
       .toJSON()
   ];
 
