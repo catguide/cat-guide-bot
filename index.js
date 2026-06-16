@@ -2,23 +2,6 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const axios = require('axios');
 const PLATFORMS = require('./platforms');
-const express = require('express');
-
-// Mini-Webserver für roblox:// Redirect (Discord erlaubt kein roblox:// in Buttons)
-const app = express();
-app.get('/join', (req, res) => {
-  const { placeId, gameInstanceId } = req.query;
-  if (!placeId || !gameInstanceId) return res.status(400).send('Missing params');
-  const robloxUrl = `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${gameInstanceId}`;
-  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Join Roblox</title>
-<style>body{background:#1a1a2e;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:Arial}
-a{background:#00b06f;color:white;padding:20px 40px;border-radius:12px;text-decoration:none;font-size:24px;font-weight:bold}
-a:hover{background:#009060}</style></head>
-<body><a href=${JSON.stringify(robloxUrl)}>🚀 Jetzt in Roblox joinen</a>
-<script>setTimeout(()=>{window.location.href=${JSON.stringify(robloxUrl)}},500)</script>
-</body></html>`);
-});
-app.listen(3000);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
@@ -328,16 +311,10 @@ client.on('interactionCreate', async (interaction) => {
     if (p.placeId && p.gameId) {
       const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
       const gameName = gameRes?.data?.[0]?.name || `Place ${p.placeId}`;
-      const embed = new EmbedBuilder()
-        .setTitle(`✅ ${username} gefunden!`)
-        .setColor(0x57f287)
-        .addFields({ name: '🎮 Spiel', value: gameName, inline: true })
-        .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(`http://104.238.167.216:3000/join?placeId=${p.placeId}&gameInstanceId=${p.gameId}`).setStyle(ButtonStyle.Link),
-        new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
-      );
-      return interaction.editReply({ embeds: [embed], components: [row] });
+      const joinLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`;
+      return interaction.editReply({
+        content: `✅ **${username} gefunden!**\n🎮 **${gameName}**\n\n🚀 **Join-Link (anklicken):**\n${joinLink}`,
+      });
     }
 
     // placeId unbekannt (Privatsphäre) → alle Spiele scannen
@@ -361,19 +338,10 @@ client.on('interactionCreate', async (interaction) => {
       return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
     }
 
-    const foundEmbed = new EmbedBuilder()
-      .setTitle(`✅ ${username} gefunden!`)
-      .setColor(0x57f287)
-      .addFields(
-        { name: '🎮 Spiel', value: gameName2, inline: true },
-        { name: '👥 Server', value: `${result.players}/${result.maxPlayers} Spieler`, inline: true },
-      )
-      .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
-    const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel('🚀 Direkt joinen').setURL(result.joinLink).setStyle(ButtonStyle.Link),
-      new ButtonBuilder().setLabel('🌐 Spiel öffnen').setURL(`https://www.roblox.com/games/${p.placeId}`).setStyle(ButtonStyle.Link),
-    );
-    return interaction.editReply({ embeds: [foundEmbed], components: [row2] });
+    const joinLink2 = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${result.serverId}`;
+    return interaction.editReply({
+      content: `✅ **${username} gefunden!**\n🎮 **${gameName2}** — ${result.players}/${result.maxPlayers} Spieler\n\n🚀 **Join-Link (anklicken):**\n${joinLink2}`,
+    });
   }
 
   if (interaction.commandName !== 'scan') return;
