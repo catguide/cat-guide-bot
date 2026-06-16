@@ -96,10 +96,10 @@ client.on('interactionCreate', async (interaction) => {
 
   // ── Discord User Scan ──
   if (targetUser) {
-    const member = interaction.guild?.members.cache.get(targetUser.id)
-      || await interaction.guild?.members.fetch(targetUser.id).catch(() => null);
+    const member = await interaction.guild?.members.fetch({ user: targetUser.id, force: true }).catch(() => null);
 
-    const flags = targetUser.flags?.toArray() || [];
+    const fetchedUser = await client.users.fetch(targetUser.id, { force: true }).catch(() => targetUser);
+    const flags = fetchedUser.flags?.toArray() || [];
     const badgeMap = {
       Staff: '👨‍💼 Discord Staff',
       Partner: '🤝 Partner',
