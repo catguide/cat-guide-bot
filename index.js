@@ -83,7 +83,8 @@ async function getRobloxUser(username) {
   const headers = {
     'User-Agent': 'Mozilla/5.0',
     'Accept': 'application/json',
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    ...(process.env.ROBLOX_COOKIE ? { 'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` } : {})
   };
 
   const [details, presence, avatar] = await Promise.all([
