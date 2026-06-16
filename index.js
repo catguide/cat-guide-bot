@@ -29,6 +29,11 @@ async function checkPlatform(platform, username) {
       return { found: res.status === 200, url, name: platform.name };
     }
 
+    if (platform.errorType === 'redirect') {
+      const finalUrl = res.request?.res?.responseUrl || res.config?.url || url;
+      return { found: !finalUrl.includes(platform.errorUrl), url, name: platform.name };
+    }
+
     if (platform.errorType === 'message') {
       const errorMsg = platform.errorMsg.replace(/\{\}/g, username);
       const bodyText = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
