@@ -89,38 +89,38 @@ async function resolveTokensToIds(tokens) {
 }
 
 async function findPlayerInGame(placeId, targetUserId) {
-  const TIMEOUT_MS = 28000;
-  const start = Date.now();
+  return Promise.race([
+    _scanServers(placeId, targetUserId),
+    new Promise(resolve => setTimeout(() => resolve(null), 25000))
+  ]);
+}
+
+async function _scanServers(placeId, targetUserId) {
   let cursor = '';
   const maxPages = 20;
 
   for (let page = 0; page < maxPages; page++) {
-    if (Date.now() - start > TIMEOUT_MS) break;
-
     const url = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100${cursor ? `&cursor=${cursor}` : ''}`;
-    const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000, validateStatus: () => true }).catch(() => null);
+    const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000, validateStatus: () => true }).catch(() => null);
     if (!res?.data?.data?.length) break;
 
     const servers = res.data.data;
 
-    // Server in 10er-Gruppen parallel checken
-    for (let i = 0; i < servers.length; i += 10) {
-      if (Date.now() - start > TIMEOUT_MS) break;
-      const group = servers.slice(i, i + 10);
-      const hits = await Promise.all(group.map(async server => {
-        if (!server.playerTokens?.length) return null;
-        const ids = await resolveTokensToIds(server.playerTokens);
-        return ids.includes(targetUserId) ? server : null;
-      }));
-      const found = hits.find(h => h !== null);
-      if (found) {
-        return {
-          serverId: found.id,
-          players: found.playing,
-          maxPlayers: found.maxPlayers,
-          joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${found.id}&userId=${targetUserId}`
-        };
-      }
+    // Alle Server dieser Seite parallel checken
+    const hits = await Promise.all(servers.map(async server => {
+      if (!server.playerTokens?.length) return null;
+      const ids = await resolveTokensToIds(server.playerTokens);
+      return ids.includes(targetUserId) ? server : null;
+    }));
+
+    const found = hits.find(h => h !== null);
+    if (found) {
+      return {
+        serverId: found.id,
+        players: found.playing,
+        maxPlayers: found.maxPlayers,
+        joinLink: `roblox://experiences/start?placeId=${placeId}&gameInstanceId=${found.id}&userId=${targetUserId}`
+      };
     }
 
     cursor = res.data.nextPageCursor;
