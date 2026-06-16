@@ -200,14 +200,10 @@ client.once('ready', async () => {
       .toJSON(),
     new SlashCommandBuilder()
       .setName('find')
-      .setDescription('Roblox Spieler in einem Spiel finden — gibt den Server-Join-Link zurück')
+      .setDescription('Roblox Spieler finden & direkt joinen — nur Username nötig')
       .addStringOption(opt =>
         opt.setName('username')
-          .setDescription('Roblox Username des Spielers')
-          .setRequired(true))
-      .addStringOption(opt =>
-        opt.setName('placeid')
-          .setDescription('Place ID des Spiels (aus der URL: roblox.com/games/PLACEID)')
+          .setDescription('Roblox Username')
           .setRequired(true))
       .toJSON(),
     new SlashCommandBuilder()
@@ -276,46 +272,71 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'find') {
     await interaction.deferReply();
     const username = interaction.options.getString('username');
-    const placeId = interaction.options.getString('placeid');
 
     const userInfo = await getRobloxUserId(username);
     if (!userInfo) {
       return interaction.editReply({ content: `❌ Roblox User **${username}** nicht gefunden.` });
     }
 
+    // Presence holen um placeId zu kriegen
+    const headers = {
+      'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Content-Type': 'application/json',
+      ...(process.env.ROBLOX_COOKIE ? { 'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` } : {})
+    };
+    const presence = await axios.post('https://presence.roblox.com/v1/presence/users',
+      { userIds: [userInfo.id] }, { headers, timeout: 8000 }).catch(() => null);
+    const p = presence?.data?.userPresences?.[0];
+
+    if (!p || p.userPresenceType !== 2) {
+      return interaction.editReply({ content: `❌ **${username}** ist gerade nicht in Roblox.` });
+    }
+
+    // Wenn placeId bekannt (Freunde oder öffentlich) → direkt joinen
+    if (p.placeId && p.gameId) {
+      const joinLink = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${p.gameId}`;
+      const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
+      const gameName = gameRes?.data?.[0]?.name || `Place ${p.placeId}`;
+      const embed = new EmbedBuilder()
+        .setTitle(`✅ ${username} gefunden!`)
+        .setColor(0x57f287)
+        .addFields(
+          { name: '🎮 Spiel', value: gameName, inline: true },
+          { name: '🚀 Direkt joinen', value: `[Join Link](${joinLink})`, inline: false },
+        )
+        .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // placeId unbekannt (Privatsphäre) → alle Spiele scannen
+    if (!p.placeId) {
+      return interaction.editReply({ content: `❌ **${username}** ist in Roblox, aber hat Privatsphäre aktiviert — Server kann nicht gefunden werden.` });
+    }
+
+    // placeId bekannt aber kein gameId → öffentliche Server scannen
     const loadEmbed = new EmbedBuilder()
-      .setTitle(`🔍 Suche \`${username}\` in Spiel \`${placeId}\`...`)
+      .setTitle(`🔍 Suche \`${username}\`...`)
       .setColor(0xfaa61a)
-      .setDescription('Scanne alle öffentlichen Server — das kann 1–2 Minuten dauern...')
+      .setDescription('Scanne alle öffentlichen Server — bitte warten...')
       .setFooter({ text: 'Cat Guide Investigation Bot' });
     await interaction.editReply({ embeds: [loadEmbed] });
 
-    const result = await findPlayerInGame(parseInt(placeId), userInfo.id);
+    const result = await findPlayerInGame(p.placeId, userInfo.id);
+    const gameRes2 = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
+    const gameName2 = gameRes2?.data?.[0]?.name || `Place ${p.placeId}`;
 
     if (!result) {
-      const notFoundEmbed = new EmbedBuilder()
-        .setTitle(`❌ ${username} nicht gefunden`)
-        .setColor(0xed4245)
-        .setDescription(`Der Spieler ist entweder nicht in diesem Spiel, in einem privaten Server, oder der Server-Scan ist abgeschlossen.`)
-        .addFields(
-          { name: '👤 Gesuchter User', value: `[${username}](https://www.roblox.com/users/${userInfo.id}/profile)`, inline: true },
-          { name: '🎮 Spiel', value: `[Place ${placeId}](https://www.roblox.com/games/${placeId})`, inline: true },
-        )
-        .setFooter({ text: 'Cat Guide Investigation Bot' })
-        .setTimestamp();
-      return interaction.editReply({ embeds: [notFoundEmbed] });
+      return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
     }
 
     const foundEmbed = new EmbedBuilder()
       .setTitle(`✅ ${username} gefunden!`)
       .setColor(0x57f287)
       .addFields(
-        { name: '👤 Spieler', value: `[${username}](https://www.roblox.com/users/${userInfo.id}/profile)`, inline: true },
+        { name: '🎮 Spiel', value: gameName2, inline: true },
         { name: '👥 Server', value: `${result.players}/${result.maxPlayers} Spieler`, inline: true },
         { name: '🚀 Direkt joinen', value: `[Join Link](${result.joinLink})`, inline: false },
       )
-      .setFooter({ text: 'Cat Guide Investigation Bot' })
-      .setTimestamp();
+      .setFooter({ text: 'Cat Guide Investigation Bot' }).setTimestamp();
     return interaction.editReply({ embeds: [foundEmbed] });
   }
 
