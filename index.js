@@ -92,6 +92,36 @@ async function resolveTokensToIds(tokens) {
   return ids;
 }
 
+async function scrapeProfileForGame(targetUserId) {
+  if (!process.env.ROBLOX_COOKIE) return null;
+  try {
+    // Roblox embedded page state enthält manchmal gameId auch bei Privacy
+    const res = await axios.get(`https://www.roblox.com/users/${targetUserId}/profile`, {
+      headers: {
+        'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+      },
+      timeout: 10000,
+    }).catch(() => null);
+    if (!res?.data) return null;
+    const html = res.data;
+
+    // Suche nach gameInstanceId / placeId im eingebetteten JS-State
+    const instanceMatch = html.match(/"gameInstanceId"\s*:\s*"([^"]+)"/);
+    const placeMatch = html.match(/"placeId"\s*:\s*(\d+)/);
+    const jobMatch = html.match(/"jobId"\s*:\s*"([^"]+)"/);
+
+    if ((instanceMatch || jobMatch) && placeMatch) {
+      return {
+        placeId: placeMatch[1],
+        gameInstanceId: instanceMatch?.[1] || jobMatch?.[1],
+      };
+    }
+    return null;
+  } catch { return null; }
+}
+
 async function followUserToServer(targetUserId) {
   if (!process.env.ROBLOX_COOKIE) return null;
   try {
@@ -336,7 +366,18 @@ client.on('interactionCreate', async (interaction) => {
       ...(process.env.ROBLOX_COOKIE ? { 'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` } : {})
     };
 
-    // Follow-User Trick: Roblox Launcher folgt dem User direkt in seinen Server
+    // Trick 1: Profile-Scrape — Roblox-Seite enthält manchmal gameInstanceId
+    const profileResult = await scrapeProfileForGame(userInfo.id);
+    if (profileResult?.gameInstanceId) {
+      const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${profileResult.placeId}`, { headers }).catch(() => null);
+      const gameName = gameRes?.data?.[0]?.name || `Place ${profileResult.placeId}`;
+      const joinLink = `roblox://experiences/start?placeId=${profileResult.placeId}&gameInstanceId=${profileResult.gameInstanceId}`;
+      return interaction.editReply({
+        content: `✅ **${username} gefunden in ${gameName}!**\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
+      });
+    }
+
+    // Trick 2: Follow-User — Roblox Launcher folgt dem User direkt in seinen Server
     const followResult = await followUserToServer(userInfo.id);
     if (followResult?.gameInstanceId) {
       const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${followResult.placeId}`, { headers }).catch(() => null);
