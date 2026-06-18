@@ -92,6 +92,34 @@ async function resolveTokensToIds(tokens) {
   return ids;
 }
 
+async function followUserToServer(targetUserId) {
+  if (!process.env.ROBLOX_COOKIE) return null;
+  try {
+    const trackerId = Math.floor(Math.random() * 9999999999);
+    const res = await axios.get(
+      `https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestFollowUser&userId=${targetUserId}&isPartyLeader=false&browserTrackerId=${trackerId}`,
+      {
+        headers: {
+          'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}`,
+          'User-Agent': 'Mozilla/5.0',
+        },
+        timeout: 10000,
+        validateStatus: () => true,
+      }
+    ).catch(() => null);
+
+    if (!res?.data) return null;
+    const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+    // status 2 = joining, jobId = server instance ID
+    if (data.jobId && data.placeId) {
+      return { placeId: data.placeId, gameInstanceId: data.jobId, status: data.status };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function findPlayerInGame(placeId, targetUserId) {
   return Promise.race([
     _scanServers(placeId, targetUserId),
@@ -307,6 +335,17 @@ client.on('interactionCreate', async (interaction) => {
       'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Content-Type': 'application/json',
       ...(process.env.ROBLOX_COOKIE ? { 'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` } : {})
     };
+
+    // Follow-User Trick: Roblox Launcher folgt dem User direkt in seinen Server
+    const followResult = await followUserToServer(userInfo.id);
+    if (followResult?.gameInstanceId) {
+      const gameRes = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${followResult.placeId}`, { headers }).catch(() => null);
+      const gameName = gameRes?.data?.[0]?.name || `Place ${followResult.placeId}`;
+      const joinLink = `roblox://experiences/start?placeId=${followResult.placeId}&gameInstanceId=${followResult.gameInstanceId}`;
+      return interaction.editReply({
+        content: `✅ **${username} gefunden in ${gameName}!**\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
+      });
+    }
 
     // Wenn placeid manuell angegeben → direkt scannen ohne Presence
     if (manualPlaceId) {
