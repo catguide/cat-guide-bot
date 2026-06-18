@@ -191,15 +191,27 @@ async function _scanAllPlaces(rootPlaceId, targetUserId) {
 async function _scanServers(placeId, targetUserId) {
   let cursor = '';
   const maxPages = 20;
+  let totalServers = 0;
 
   for (let page = 0; page < maxPages; page++) {
     const url = `https://games.roblox.com/v1/games/${placeId}/servers/Public?limit=100${cursor ? `&cursor=${cursor}` : ''}`;
     const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000, validateStatus: () => true }).catch(() => null);
-    if (!res?.data?.data?.length) break;
+    if (!res?.data?.data?.length) {
+      console.log(`[scan] placeId=${placeId} page=${page} no servers, stop. total=${totalServers}`);
+      break;
+    }
 
     const servers = res.data.data;
+    totalServers += servers.length;
+    console.log(`[scan] placeId=${placeId} page=${page} servers=${servers.length} total=${totalServers}`);
 
-    // Alle Server dieser Seite parallel checken
+    // Teste ersten Server direkt um Token-Auflösung zu debuggen
+    if (page === 0 && servers[0]?.playerTokens?.length) {
+      const testIds = await resolveTokensToIds(servers[0].playerTokens.slice(0, 5));
+      console.log(`[scan] token test: ${servers[0].playerTokens.slice(0,5).length} tokens → ${testIds.length} ids: ${testIds.join(',')}`);
+      console.log(`[scan] looking for userId: ${targetUserId}`);
+    }
+
     const hits = await Promise.all(servers.map(async server => {
       if (!server.playerTokens?.length) return null;
       const ids = await resolveTokensToIds(server.playerTokens);
@@ -208,18 +220,15 @@ async function _scanServers(placeId, targetUserId) {
 
     const found = hits.find(h => h !== null);
     if (found) {
-      return {
-        serverId: found.id,
-        players: found.playing,
-        maxPlayers: found.maxPlayers,
-        joinLink: `http://104.238.167.216:3000/join?placeId=${placeId}&gameInstanceId=${found.id}`
-      };
+      console.log(`[scan] FOUND in server ${found.id}`);
+      return { serverId: found.id, players: found.playing, maxPlayers: found.maxPlayers };
     }
 
     cursor = res.data.nextPageCursor;
     if (!cursor) break;
   }
 
+  console.log(`[scan] not found after ${totalServers} servers`);
   return null;
 }
 
