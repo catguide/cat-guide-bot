@@ -83,9 +83,14 @@ async function resolveTokensToIds(tokens) {
   for (let i = 0; i < tokens.length; i += CHUNK) {
     const chunk = tokens.slice(i, i + CHUNK);
     const batch = chunk.map(t => ({ token: t, type: 'AvatarHeadShot', size: '48x48', format: 'Png' }));
-    const res = await axios.post('https://thumbnails.roblox.com/v1/batch', batch, {
-      headers, timeout: 10000
-    }).catch(() => null);
+    let res = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await axios.post('https://thumbnails.roblox.com/v1/batch', batch, {
+        headers, timeout: 10000
+      }).catch(() => null);
+      if (res?.data?.data?.length) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
     const result = res?.data?.data?.map(d => d.targetId).filter(Boolean) || [];
     ids.push(...result);
   }
@@ -150,11 +155,37 @@ async function followUserToServer(targetUserId) {
   }
 }
 
+async function getUniversePlaces(placeId) {
+  // Universe ID holen
+  const uni = await axios.get(`https://apis.roblox.com/universes/v1/places/${placeId}/universe`, {
+    headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000
+  }).catch(() => null);
+  const universeId = uni?.data?.universeId;
+  if (!universeId) return [placeId];
+
+  // Alle Places im Universe holen
+  const places = await axios.get(`https://games.roblox.com/v1/games/${universeId}/places?sortOrder=Asc&limit=100`, {
+    headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000
+  }).catch(() => null);
+
+  const placeIds = places?.data?.data?.map(p => p.id).filter(Boolean) || [];
+  return placeIds.length ? placeIds : [placeId];
+}
+
 async function findPlayerInGame(placeId, targetUserId) {
   return Promise.race([
-    _scanServers(placeId, targetUserId),
+    _scanAllPlaces(placeId, targetUserId),
     new Promise(resolve => setTimeout(() => resolve(null), 55000))
   ]);
+}
+
+async function _scanAllPlaces(rootPlaceId, targetUserId) {
+  const placeIds = await getUniversePlaces(rootPlaceId);
+  for (const pid of placeIds) {
+    const result = await _scanServers(pid, targetUserId);
+    if (result) return { ...result, placeId: pid };
+  }
+  return null;
 }
 
 async function _scanServers(placeId, targetUserId) {
@@ -395,7 +426,7 @@ client.on('interactionCreate', async (interaction) => {
       await interaction.editReply({ content: `🔍 Scanne **${gameName}** nach **${username}**...` });
       const result = await findPlayerInGame(manualPlaceId, userInfo.id);
       if (!result) return interaction.editReply({ content: `❌ **${username}** nicht in **${gameName}** gefunden (oder privater Server).` });
-      const joinLink = `roblox://experiences/start?placeId=${manualPlaceId}&gameInstanceId=${result.serverId}`;
+      const joinLink = `roblox://experiences/start?placeId=${result.placeId || manualPlaceId}&gameInstanceId=${result.serverId}`;
       return interaction.editReply({
         content: `✅ **${username} gefunden in ${gameName}!** (${result.players}/${result.maxPlayers} Spieler)\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink}\n\`\`\``,
       });
@@ -431,9 +462,9 @@ client.on('interactionCreate', async (interaction) => {
     const gameRes2 = await axios.get(`https://games.roblox.com/v1/games/multiget-place-details?placeIds=${p.placeId}`, { headers }).catch(() => null);
     const gameName2 = gameRes2?.data?.[0]?.name || `Place ${p.placeId}`;
 
-    if (!result) return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber in einem privaten Server.` });
+    if (!result) return interaction.editReply({ content: `❌ **${username}** ist in **${gameName2}** aber nicht gefunden.\nHinweis: Falls er in einem öffentlichen Server ist, nochmal versuchen — manchmal schlägt der Scan fehl.\nFalls privater Server: \`/find username:${username} placeid:${p.placeId}\`` });
 
-    const joinLink2 = `roblox://experiences/start?placeId=${p.placeId}&gameInstanceId=${result.serverId}`;
+    const joinLink2 = `roblox://experiences/start?placeId=${result.placeId || p.placeId}&gameInstanceId=${result.serverId}`;
     return interaction.editReply({
       content: `✅ **${username} gefunden in ${gameName2}!** (${result.players}/${result.maxPlayers} Spieler)\n\n🚀 Link in Adresszeile eingeben:\n\`\`\`\n${joinLink2}\n\`\`\``,
     });
