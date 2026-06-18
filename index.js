@@ -75,12 +75,16 @@ async function resolveTokensToIds(tokens) {
   if (!tokens.length) return [];
   const CHUNK = 100;
   const ids = [];
+  const headers = {
+    'User-Agent': 'Mozilla/5.0',
+    'Content-Type': 'application/json',
+    ...(process.env.ROBLOX_COOKIE ? { 'Cookie': `.ROBLOSECURITY=${process.env.ROBLOX_COOKIE}` } : {})
+  };
   for (let i = 0; i < tokens.length; i += CHUNK) {
     const chunk = tokens.slice(i, i + CHUNK);
     const batch = chunk.map(t => ({ token: t, type: 'AvatarHeadShot', size: '48x48', format: 'Png' }));
     const res = await axios.post('https://thumbnails.roblox.com/v1/batch', batch, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Content-Type': 'application/json' },
-      timeout: 8000
+      headers, timeout: 10000
     }).catch(() => null);
     const result = res?.data?.data?.map(d => d.targetId).filter(Boolean) || [];
     ids.push(...result);
@@ -91,7 +95,7 @@ async function resolveTokensToIds(tokens) {
 async function findPlayerInGame(placeId, targetUserId) {
   return Promise.race([
     _scanServers(placeId, targetUserId),
-    new Promise(resolve => setTimeout(() => resolve(null), 25000))
+    new Promise(resolve => setTimeout(() => resolve(null), 55000))
   ]);
 }
 
